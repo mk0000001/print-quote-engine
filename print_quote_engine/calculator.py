@@ -148,6 +148,13 @@ def _calculate(data: dict, policy: dict) -> dict:
     long_amount, long_floor, long_rate = _long_risk(printer, seconds, base_reference, policy)
     if long_amount:
         surcharges.append(('LONG_RISK', '장시간 출력 위험', long_amount, long_floor))
+    risk=data.get('support_risk') or {}
+    tier=str(risk.get('tier','LOW')).upper()
+    risk_rates=policy.get('support_risk_surcharge_rates', {'LOW':'0','MEDIUM':'0.05','HIGH':'0.10'})
+    if tier in risk_rates and D(str(risk_rates[tier]))>0:
+        risk_amount=machine*D(str(risk_rates[tier]))
+        surcharges.append(('SUPPORT_RISK','서포트 전도 위험',risk_amount,False))
+        warnings.append('SUPPORT_RISK_SURCHARGE_APPLIED')
     components.extend((code, label, value) for code, label, value, _ in surcharges)
     surcharge_sum = sum((row[2] for row in surcharges), D('0'))
     floor_activated = any(row[3] and row[2] > 0 for row in surcharges)
