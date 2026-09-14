@@ -150,7 +150,8 @@ def _calculate(data: dict, policy: dict) -> dict:
         surcharges.append(('LONG_RISK', '장시간 출력 위험', long_amount, long_floor))
     risk=data.get('support_risk') or {}
     tier=str(risk.get('tier','LOW')).upper()
-    risk_rates=policy.get('support_risk_surcharge_rates', {'LOW':'0','MEDIUM':'0.05','HIGH':'0.10'})
+    risk_rates=policy.get('support_risk_surcharge_rates',{})
+    if tier in ('MEDIUM','HIGH') and tier not in risk_rates:reasons.append('SUPPORT_RISK_POLICY_UNCONFIGURED')
     if tier in risk_rates and D(str(risk_rates[tier]))>0:
         risk_amount=machine*D(str(risk_rates[tier]))
         surcharges.append(('SUPPORT_RISK','서포트 전도 위험',risk_amount,False))
