@@ -4,7 +4,18 @@ Coefficients below are engineering assumptions, not manufacturer ratings or a
 validated electrical simulation. No HA connection or device identifiers belong here.
 """
 import math
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
+
+
+def job_quantity(value,name,integer=False):
+    """Use the calculator's quantity range; never substitute zero for invalid input."""
+    if isinstance(value,(bool,float)) or len(str(value))>60:raise ValueError('INVALID_DECIMAL:'+name)
+    try:result=Decimal(str(value))
+    except (InvalidOperation,ValueError) as exc:raise ValueError('INVALID_DECIMAL:'+name) from exc
+    if not result.is_finite() or not 0<=result<=Decimal('1000000000000'):
+        raise ValueError('INVALID_DECIMAL:'+name)
+    if integer and result!=result.to_integral_value():raise ValueError('INVALID_INTEGER:'+name)
+    return result
 
 
 def finite(value,default,low=0,high=100000):
@@ -79,9 +90,10 @@ def estimate_energy(data,policy):
         reference={'printer':key,**p,'scale':scale}
         if key!=printer:assumptions.append('OTHER_MACHINE_THERMAL_SCALING')
         if not close:assumptions.append('TEMPERATURE_GEOMETRY_EXTRAPOLATION_NOT_MEASURED')
-    seconds=finite(data.get('duration_seconds'),0);grams=finite(data.get('grams'),0)
+    seconds=job_quantity(data.get('duration_seconds'),'duration_seconds',integer=True)
+    grams=job_quantity(data.get('grams'),'grams')
     # Only add polymer sensible heating to uncalibrated estimates. Measured averages already include it.
-    polymer_wh=(grams*1.8*max(0,temps['nozzle_c']-temps['ambient_c'])/3600 if reference is None else 0)
+    polymer_wh=(float(grams)*1.8*max(0,temps['nozzle_c']-temps['ambient_c'])/3600 if reference is None else 0)
     width,depth=geometry.get('bed_mm',[250,250])
     # One cold start, 3 mm aluminium equivalent bed, 80% warm-up efficiency.
     warmup_wh=(float(width)*float(depth)/1e6*.003*2700*900*max(0,temps['bed_c']-temps['ambient_c'])/3600/.8)

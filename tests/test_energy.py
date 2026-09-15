@@ -28,5 +28,25 @@ class ThermalEnergyTests(unittest.TestCase):
     def test_missing_policy_retains_legacy_path(self):
         self.assertIsNone(estimate_energy({},{}))
 
+    def test_long_prints_do_not_turn_into_zero_energy(self):
+        data,policy=self.fixture()
+        for seconds in (100000,100001,128266,604800):
+            with self.subTest(seconds=seconds):
+                result=estimate_energy({**data,'duration_seconds':seconds},policy)
+                expected=200*seconds/3600000+result['warmup_wh']/1000
+                self.assertAlmostEqual(float(result['kwh']),expected,places=10)
+                self.assertGreater(result['warmup_wh'],0)
+
+    def test_large_valid_mass_is_not_discarded(self):
+        data,policy=self.fixture();policy.pop('energy_telemetry')
+        result=estimate_energy({**data,'grams':'100001'},policy)
+        self.assertGreater(result['polymer_heat_wh'],9000)
+
+    def test_invalid_job_quantities_fail_instead_of_defaulting_to_zero(self):
+        data,policy=self.fixture()
+        for field,value in [('duration_seconds',-1),('duration_seconds','NaN'),('duration_seconds','1.5'),('grams','Infinity'),('grams',None)]:
+            with self.subTest(field=field,value=value):
+                with self.assertRaises(ValueError):estimate_energy({**data,field:value},policy)
+
 
 if __name__=='__main__':unittest.main()
