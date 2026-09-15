@@ -1,4 +1,5 @@
 from decimal import Decimal, ROUND_CEILING, ROUND_HALF_UP, ROUND_HALF_EVEN, ROUND_FLOOR, localcontext
+from .energy import estimate_energy
 
 D = Decimal
 
@@ -107,7 +108,12 @@ def _calculate(data: dict, policy: dict) -> dict:
     material_amount = grams * package / weight * D(policy['material_pricing']['markup_multiplier'])
     components.append(('MATERIAL', '필라멘트', material_amount))
 
-    if data.get('energy_kwh') in (None, ''):
+    energy_details=None
+    if data.get('energy_kwh') in (None, '') and policy.get('energy_model'):
+        energy_details=estimate_energy(data,policy)
+        energy_kwh=D(energy_details['kwh'])
+        warnings.append('ENERGY_ESTIMATED_FROM_'+energy_details['method'])
+    elif data.get('energy_kwh') in (None, ''):
         power_key=f'{printer}_ABS_ASA' if material in ('ABS','ASA') else f'{printer}_GENERAL'
         power = policy['resolved_power_w'].get(power_key) or policy['resolved_power_w'].get(f'{printer}_GENERAL')
         if power:
@@ -118,6 +124,7 @@ def _calculate(data: dict, policy: dict) -> dict:
             reasons.append('ENERGY_INPUT_REQUIRED')
     else:
         energy_kwh = _d(data['energy_kwh'], 'energy_kwh')
+        energy_details={'method':'USER_INPUT','kwh':_plain(energy_kwh),'is_job_measurement':False}
     energy = energy_kwh * D(policy['energy']['unit_rate'])
     components.append(('ENERGY', '전력', energy))
 
@@ -228,9 +235,9 @@ def _calculate(data: dict, policy: dict) -> dict:
     return {'currency': 'KRW', 'policy_revision': policy['policy_revision'], 'billable_seconds': billable,
             'components': result_components, 'raw_service_supply': _plain(raw), 'subtotal': _plain(subtotal),
             'vat': _plain(vat), 'shipping': _plain(shipping), 'grand_total': _plain(subtotal + vat + shipping),
-            'discount':discount,
+            'discount':discount,'energy':energy_details,
             'warnings': warnings, 'manual_review_reasons': sorted(set(reasons)),
-            'trace': {'math_context': 'DECIMAL_P50_HALF_EVEN_V1','calculator_version':policy['calculator_version'],'source_sha256':policy['source_sha256'], 'size_rule': size['code'] if size else None,
+            'trace': {'energy':energy_details,'math_context': 'DECIMAL_P50_HALF_EVEN_V1','calculator_version':policy['calculator_version'],'source_sha256':policy['source_sha256'], 'size_rule': size['code'] if size else None,
                       'size_multiplier': _plain(multiplier), 'long_risk_rate': str(long_rate),
                       'conditional_floor': {'activated': floor_activated, 'policy_sum': _plain(surcharge_sum),
                                             'floor_amount': _plain(floor_amount), 'selected': _plain(conditional)},
