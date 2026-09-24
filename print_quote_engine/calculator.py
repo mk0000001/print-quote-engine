@@ -1,4 +1,5 @@
 from decimal import Decimal, ROUND_CEILING, ROUND_HALF_UP, ROUND_HALF_EVEN, ROUND_FLOOR, localcontext
+from .energy import estimate_energy
 
 D = Decimal
 
@@ -107,7 +108,12 @@ def _calculate(data: dict, policy: dict) -> dict:
     material_amount = grams * package / weight * D(policy['material_pricing']['markup_multiplier'])
     components.append(('MATERIAL', '필라멘트', material_amount))
 
-    if data.get('energy_kwh') in (None, ''):
+    energy_details=None
+    if data.get('energy_kwh') in (None, '') and policy.get('energy_model'):
+        energy_details=estimate_energy(data,policy)
+        energy_kwh=D(energy_details['kwh'])
+        warnings.append('ENERGY_ESTIMATED_FROM_'+energy_details['method'])
+    elif data.get('energy_kwh') in (None, ''):
         power_key=f'{printer}_ABS_ASA' if material in ('ABS','ASA') else f'{printer}_GENERAL'
         power = policy['resolved_power_w'].get(power_key) or policy['resolved_power_w'].get(f'{printer}_GENERAL')
         if power:
@@ -118,6 +124,7 @@ def _calculate(data: dict, policy: dict) -> dict:
             reasons.append('ENERGY_INPUT_REQUIRED')
     else:
         energy_kwh = _d(data['energy_kwh'], 'energy_kwh')
+        energy_details={'method':'USER_INPUT','kwh':_plain(energy_kwh),'is_job_measurement':False}
     energy = energy_kwh * D(policy['energy']['unit_rate'])
     components.append(('ENERGY', '전력', energy))
 
@@ -148,6 +155,14 @@ def _calculate(data: dict, policy: dict) -> dict:
     long_amount, long_floor, long_rate = _long_risk(printer, seconds, base_reference, policy)
     if long_amount:
         surcharges.append(('LONG_RISK', '장시간 출력 위험', long_amount, long_floor))
+    risk=data.get('support_risk') or {}
+    tier=str(risk.get('tier','LOW')).upper()
+    risk_rates=policy.get('support_risk_surcharge_rates',{})
+    if tier in ('MEDIUM','HIGH') and tier not in risk_rates:reasons.append('SUPPORT_RISK_POLICY_UNCONFIGURED')
+    if tier in risk_rates and D(str(risk_rates[tier]))>0:
+        risk_amount=machine*D(str(risk_rates[tier]))
+        surcharges.append(('SUPPORT_RISK','서포트 전도 위험',risk_amount,False))
+        warnings.append('SUPPORT_RISK_SURCHARGE_APPLIED')
     components.extend((code, label, value) for code, label, value, _ in surcharges)
     surcharge_sum = sum((row[2] for row in surcharges), D('0'))
     floor_activated = any(row[3] and row[2] > 0 for row in surcharges)
@@ -194,12 +209,35 @@ def _calculate(data: dict, policy: dict) -> dict:
     rounding={'CEILING':ROUND_CEILING,'HALF_UP':ROUND_HALF_UP,'FLOOR':ROUND_FLOOR}.get(mode)
     if not rounding or tax_unit<=0: raise ValueError('INVALID_TAX_ROUNDING_POLICY')
     vat=(vat/tax_unit).to_integral_value(rounding=rounding)*tax_unit
+    discount_percent=_d(data.get('discount_percent','0'),'discount_percent')
+    if discount_percent>D('100'):raise ValueError('INVALID_DISCOUNT_PERCENT')
+    discount_reason=data.get('discount_reason','')
+    if not isinstance(discount_reason,str) or len(discount_reason)>500 or any(ord(c)<32 and c not in '\n\r\t' for c in discount_reason):
+        raise ValueError('INVALID_DISCOUNT_REASON')
+    discount_reason=discount_reason.strip()
+    if discount_percent and not discount_reason:raise ValueError('DISCOUNT_REASON_REQUIRED')
+    before_subtotal,before_vat,before_shipping=subtotal,vat,shipping
+    if discount_percent:
+        factor=D('1')-discount_percent/D('100')
+        subtotal=(subtotal*factor).quantize(D('1'),rounding=ROUND_HALF_UP)
+        shipping=(shipping*factor).quantize(D('1'),rounding=ROUND_HALF_UP)
+        tax_base=subtotal+(shipping if shipping_taxable is True else D('0'))
+        vat=tax_base*tax_rate if _truth(data.get('tax_applicable')) else D('0')
+        vat=(vat/tax_unit).to_integral_value(rounding=rounding)*tax_unit
+    discount={'percent':_plain(discount_percent),'reason':discount_reason,
+              'before_subtotal':_plain(before_subtotal),'before_vat':_plain(before_vat),'before_shipping':_plain(before_shipping),
+              'before_total':_plain(before_subtotal+before_vat+before_shipping),
+              'service_amount':_plain(before_subtotal-subtotal),'shipping_amount':_plain(before_shipping-shipping),
+              'tax_reduction':_plain(before_vat-vat),
+              'amount':_plain(before_subtotal+before_vat+before_shipping-subtotal-vat-shipping),
+              'basis':'SERVICE_AND_SHIPPING_WITH_RECALCULATED_TAX','rounding':'KRW_HALF_UP_THEN_POLICY_VAT_ROUNDING'}
     result_components = [{'code': c, 'label': label, 'amount': _plain(value)} for c, label, value in components]
     return {'currency': 'KRW', 'policy_revision': policy['policy_revision'], 'billable_seconds': billable,
             'components': result_components, 'raw_service_supply': _plain(raw), 'subtotal': _plain(subtotal),
             'vat': _plain(vat), 'shipping': _plain(shipping), 'grand_total': _plain(subtotal + vat + shipping),
+            'discount':discount,'energy':energy_details,
             'warnings': warnings, 'manual_review_reasons': sorted(set(reasons)),
-            'trace': {'math_context': 'DECIMAL_P50_HALF_EVEN_V1','calculator_version':policy['calculator_version'],'source_sha256':policy['source_sha256'], 'size_rule': size['code'] if size else None,
+            'trace': {'energy':energy_details,'math_context': 'DECIMAL_P50_HALF_EVEN_V1','calculator_version':policy['calculator_version'],'source_sha256':policy['source_sha256'], 'size_rule': size['code'] if size else None,
                       'size_multiplier': _plain(multiplier), 'long_risk_rate': str(long_rate),
                       'conditional_floor': {'activated': floor_activated, 'policy_sum': _plain(surcharge_sum),
                                             'floor_amount': _plain(floor_amount), 'selected': _plain(conditional)},
