@@ -1,0 +1,37 @@
+{
+  "counting_rule": "Reachable non-merge commits modifying the engine package, excluding _version.py; initial import counts as revision 1. Docs, tests-only and host-app changes excluded. Not individual feature counts.",
+  "version": "0.7.0",
+  "revision_count": 7,
+  "update_count": 6,
+  "source_commit": "173afefe03e8dbb90dd0318229bee8aa89c1e7a1",
+  "commits": [
+    {
+      "commit": "fb15f27c76a865bec12622d9d092a01e2c92b9f9",
+      "subject": "Extract policy-injected Decimal quote engine"
+    },
+    {
+      "commit": "b0fbc34626870172d79cd526231b233b2ea2be58",
+      "subject": "Add policy driven support risk surcharge"
+    },
+    {
+      "commit": "eb3c4cb7aea4a68fca12639b10962114d2c38ae8",
+      "subject": "Require host policy for support risk pricing"
+    },
+    {
+      "commit": "88d3ce176d515a2af59d35ff5bb87048bfac2551",
+      "subject": "Support reasoned percentage discounts with recalculated VAT"
+    },
+    {
+      "commit": "93cf4096570ad629b6fc37c1a4d72ef294323221",
+      "subject": "Estimate electricity from supplied print telemetry and thermal geometry"
+    },
+    {
+      "commit": "561e9bcb8999606f3f50bb0faa8267ced54ce52c",
+      "subject": "Preserve long print durations in electricity estimates"
+    },
+    {
+      "commit": "173afefe03e8dbb90dd0318229bee8aa89c1e7a1",
+      "subject": "Fix reviewed geometry and calculation regressions"
+    }
+  ]
+}
